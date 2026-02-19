@@ -2,6 +2,9 @@
 name = "website_opener"
 version = "0.1.0"
 edition = "2021"
+license = "BSD-3-Clause"
+repository = "https://github.com/NMZ0429/website_opener"
+description = "Open URL aliases in a browser from the terminal"
 
 [[bin]]
 name = "web"
@@ -14,3 +17,17 @@ serde         = { version = "1", features = ["derive"] }
 toml          = "0.8"
 dirs          = "5"
 anyhow        = "1"
+
+[profile.dist]
+inherits = "release"
+lto = true
+
+[workspace.metadata.dist]
+cargo-dist-version = "0.30.4"
+ci = "github"
+installers = ["shell", "powershell"]
+# installers = ["shell", "powershell", "homebrew"]
+# tap = "NMZ0429/homebrew-tap"
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
+pr-run-mode = "plan"
+install-updater = false

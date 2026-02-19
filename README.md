@@ -4,6 +4,14 @@ Open URL aliases in a browser from the terminal.
 
 ## Install
 
+Via the installer script (macOS):
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/NMZ0429/website_opener/releases/latest/download/website_opener-installer.sh | sh
+```
+
+Or build from source:
+
 ```sh
 cargo install --path .
 ```
@@ -72,4 +80,27 @@ Aliases are stored in `~/.config/website_opener/config.toml`:
 gh = "https://github.com"
 claude = "https://claude.ai"
 c = "https://claude.ai"
+```
+
+## Release
+
+Releases are automated with [dist](https://opensource.axo.dev/cargo-dist/). Pushing a version tag triggers GitHub Actions to build macOS binaries and create a GitHub Release with installers.
+
+```sh
+# 1. Bump version in Cargo.toml
+# 2. Commit
+git add Cargo.toml Cargo.lock
+git commit -m "release: v0.2.0"
+
+# 3. Tag and push
+git tag v0.2.0
+git push origin main --tags
+```
+
+The workflow builds `aarch64-apple-darwin` and `x86_64-apple-darwin` binaries and generates a shell installer script.
+
+To regenerate the release workflow after changing dist config:
+
+```sh
+dist generate
 ```
