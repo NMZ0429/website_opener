@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueHint};
 use clap_complete::engine::ArgValueCompleter;
 
 use crate::config::complete_alias;
@@ -19,7 +19,7 @@ pub struct Cli {
     pub command: Option<Commands>,
 
     /// Alias to open (when no subcommand given)
-    #[arg(add = ArgValueCompleter::new(complete_alias))]
+    #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(complete_alias))]
     pub alias: Option<String>,
 }
 
@@ -42,19 +42,27 @@ impl Cli {
 #[derive(Debug, Subcommand)]
 pub enum Commands {
     /// Register new alias(es) — comma-separated for multiple (e.g. claude,c)
-    Add { aliases: String, url: String },
+    Add {
+        #[arg(value_hint = ValueHint::Other)]
+        aliases: String,
+        #[arg(value_hint = ValueHint::Url)]
+        url: String,
+    },
     /// Remove alias(es) — comma-separated for multiple (e.g. claude,c)
     Remove {
-        #[arg(add = ArgValueCompleter::new(complete_alias))]
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(complete_alias))]
         aliases: String,
     },
     /// List all aliases
     List,
-    /// Generate static shell completions
+    /// Generate shell completions
     Completions {
         #[arg(value_enum)]
         shell: clap_complete::Shell,
     },
+    /// Output aliases for shell completion (internal use)
+    #[command(name = "_complete-aliases", hide = true)]
+    CompleteAliases,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

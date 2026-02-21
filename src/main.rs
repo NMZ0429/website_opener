@@ -31,7 +31,29 @@ fn run() -> Result<()> {
             println!("Removed {}", quoted.join(", "));
         }
         Some(Commands::Completions { shell }) => {
-            clap_complete::generate(shell, &mut Cli::command(), "web", &mut std::io::stdout());
+            if shell == clap_complete::Shell::Zsh {
+                print!("{}", zsh_completion_script());
+            } else {
+                let shell_name = match shell {
+                    clap_complete::Shell::Bash => "bash",
+                    clap_complete::Shell::Fish => "fish",
+                    clap_complete::Shell::Elvish => "elvish",
+                    clap_complete::Shell::PowerShell => "powershell",
+                    _ => anyhow::bail!("Unsupported shell: {shell}"),
+                };
+                std::env::set_var("COMPLETE", shell_name);
+                CompleteEnv::with_factory(Cli::command)
+                    .try_complete(["web"], None::<&std::path::Path>)?;
+            }
+        }
+        Some(Commands::CompleteAliases) => {
+            let aliases = config::list_aliases()?;
+            for (alias, url) in aliases {
+                // Escape colons and backslashes for zsh _describe format
+                let alias = alias.replace('\\', "\\\\").replace(':', "\\:");
+                let url = url.replace('\\', "\\\\");
+                println!("{alias}:{url}");
+            }
         }
         Some(Commands::List) => {
             let aliases = config::list_aliases()?;
@@ -65,3 +87,75 @@ fn run() -> Result<()> {
     }
     Ok(())
 }
+
+fn zsh_completion_script() -> &'static str {
+    r#"#compdef web
+
+_web() {
+    local curcontext="$curcontext" state line
+    typeset -A opt_args
+
+    _arguments -s -S \
+        '(--chrome --firefox --brave)--safari[Use Safari browser]' \
+        '(--safari --firefox --brave)--chrome[Use Chrome browser]' \
+        '(--safari --chrome --brave)--firefox[Use Firefox browser]' \
+        '(--safari --chrome --firefox)--brave[Use Brave browser]' \
+        '(- *)--help[Print help]' \
+        '(- *)--version[Print version]' \
+        '1: :_web_first_arg' \
+        '*:: :->subcmd' \
+        && return
+
+    case $state in
+        subcmd)
+            case $line[1] in
+                add)
+                    _arguments \
+                        '1:aliases:' \
+                        '2:url:_urls'
+                    ;;
+                remove)
+                    _arguments \
+                        '1:aliases:_web_aliases'
+                    ;;
+                completions)
+                    _arguments \
+                        '1:shell:(bash zsh fish elvish powershell)'
+                    ;;
+                help)
+                    local -a subcmds=(
+                        'add:Register new alias(es)'
+                        'completions:Generate shell completions'
+                        'help:Print this message or the help of the given subcommand(s)'
+                        'list:List all aliases'
+                        'remove:Remove alias(es)'
+                    )
+                    _describe 'subcommand' subcmds
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+_web_first_arg() {
+    local -a subcommands=(
+        'add:Register new alias(es) — comma-separated for multiple (e.g. claude,c)'
+        'completions:Generate shell completions'
+        'help:Print this message or the help of the given subcommand(s)'
+        'list:List all aliases'
+        'remove:Remove alias(es) — comma-separated for multiple (e.g. claude,c)'
+    )
+    _describe 'subcommand' subcommands
+    _web_aliases
+}
+
+_web_aliases() {
+    local -a aliases
+    aliases=("${(@f)$(web _complete-aliases 2>/dev/null)}")
+    [[ -n $aliases ]] && _describe 'alias' aliases
+}
+
+_web "$@"
+"#
+}
+

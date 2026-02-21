@@ -23,6 +23,9 @@ cargo install --path .
 web add gh https://github.com
 web add claude,c https://claude.ai
 
+# URLs with special characters (?, &, etc.) must be quoted
+web add aws 'https://myapps.microsoft.com/signin/myapp?tenantId=abc123'
+
 # Open an alias
 web gh
 
@@ -42,21 +45,17 @@ web remove claude,c
 
 ## Shell Completion
 
-### Dynamic (recommended)
-
 Add to your `~/.zshrc` (or equivalent):
 
 ```sh
 source <(COMPLETE=zsh web)
+# or
+source <(web completions zsh)
 ```
 
 Replace `zsh` with `bash`, `fish`, or `elvish` as needed.
 
-Dynamic completions stay in sync with your config automatically — alias names are completed as you type.
-
-### Static
-
-Generate a completion script and place it in your shell's `site-functions` directory:
+Alternatively, write the completion script to a file:
 
 ```sh
 # zsh
@@ -69,7 +68,7 @@ web completions bash > /etc/bash_completion.d/web
 web completions fish > ~/.config/fish/completions/web.fish
 ```
 
-Static completions cover subcommands and flags but do not complete alias names.
+Completions stay in sync with your config automatically — alias names are completed as you type.
 
 ## Config
 
