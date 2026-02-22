@@ -60,6 +60,8 @@ pub enum Commands {
         #[arg(value_enum)]
         shell: clap_complete::Shell,
     },
+    /// Export current alias settings to stdout (TOML format)
+    Export,
     /// Output aliases for shell completion (internal use)
     #[command(name = "_complete-aliases", hide = true)]
     CompleteAliases,

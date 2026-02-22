@@ -46,6 +46,10 @@ fn run() -> Result<()> {
                     .try_complete(["web"], None::<&std::path::Path>)?;
             }
         }
+        Some(Commands::Export) => {
+            let config = config::load()?;
+            print!("{}", toml::to_string_pretty(&config)?);
+        }
         Some(Commands::CompleteAliases) => {
             let aliases = config::list_aliases()?;
             for (alias, url) in aliases {
