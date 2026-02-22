@@ -72,7 +72,7 @@ Completions stay in sync with your config automatically — alias names are comp
 
 ## Config
 
-Aliases are stored in `~/.config/website_opener/config.toml`:
+Aliases are stored in `~/.config/web/config.toml`:
 
 ```toml
 [aliases]
