@@ -46,6 +46,13 @@ fn run() -> Result<()> {
                     .try_complete(["web"], None::<&std::path::Path>)?;
             }
         }
+        Some(Commands::Export) => {
+            let config = config::load()?;
+            print!("{}", toml::to_string_pretty(&config)?);
+        }
+        Some(Commands::Import { path }) => {
+            config::import_aliases(&path)?;
+        }
         Some(Commands::CompleteAliases) => {
             let aliases = config::list_aliases()?;
             for (alias, url) in aliases {
@@ -122,11 +129,17 @@ _web() {
                     _arguments \
                         '1:shell:(bash zsh fish elvish powershell)'
                     ;;
+                import)
+                    _arguments \
+                        '1:path:_files -g "*.toml"'
+                    ;;
                 help)
                     local -a subcmds=(
                         'add:Register new alias(es)'
                         'completions:Generate shell completions'
+                        'export:Export current alias settings to stdout'
                         'help:Print this message or the help of the given subcommand(s)'
+                        'import:Import aliases from a TOML file'
                         'list:List all aliases'
                         'remove:Remove alias(es)'
                     )
@@ -141,7 +154,9 @@ _web_first_arg() {
     local -a subcommands=(
         'add:Register new alias(es) — comma-separated for multiple (e.g. claude,c)'
         'completions:Generate shell completions'
+        'export:Export current alias settings to stdout (TOML format)'
         'help:Print this message or the help of the given subcommand(s)'
+        'import:Import aliases from a TOML file'
         'list:List all aliases'
         'remove:Remove alias(es) — comma-separated for multiple (e.g. claude,c)'
     )

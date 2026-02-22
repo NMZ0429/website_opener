@@ -41,6 +41,10 @@ web list
 # Remove alias(es)
 web remove gh
 web remove claude,c
+
+# Export all aliases to stdout (TOML format)
+web export
+web export > my-aliases.toml
 ```
 
 ## Shell Completion

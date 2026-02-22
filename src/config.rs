@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, anyhow};
+use dialoguer::Select;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -73,6 +74,142 @@ pub fn list_aliases() -> Result<Vec<(String, String)>> {
         .aliases
         .into_iter()
         .collect())
+}
+
+pub fn import_aliases(path: &str) -> Result<()> {
+    let content = if path == "-" {
+        use std::io::Read;
+        let mut buf = String::new();
+        std::io::stdin()
+            .read_to_string(&mut buf)
+            .with_context(|| "Failed to read from stdin")?;
+        buf
+    } else {
+        std::fs::read_to_string(path)
+            .with_context(|| format!("Failed to read file '{}'", path))?
+    };
+
+    let imported: Config =
+        toml::from_str(&content).with_context(|| "Failed to parse TOML input")?;
+
+    if imported.aliases.is_empty() {
+        println!("No aliases found in input.");
+        return Ok(());
+    }
+
+    let mut config = load()?;
+
+    let mut new_aliases: Vec<(String, String)> = Vec::new();
+    let mut conflicts: Vec<(String, String, String)> = Vec::new(); // (alias, existing_url, imported_url)
+    let mut unchanged: usize = 0;
+
+    for (alias, imported_url) in &imported.aliases {
+        match config.aliases.get(alias) {
+            Some(existing_url) if existing_url == imported_url => {
+                unchanged += 1;
+            }
+            Some(existing_url) => {
+                conflicts.push((alias.clone(), existing_url.clone(), imported_url.clone()));
+            }
+            None => {
+                new_aliases.push((alias.clone(), imported_url.clone()));
+            }
+        }
+    }
+
+    // Apply new aliases directly
+    for (alias, url) in &new_aliases {
+        config.aliases.insert(alias.clone(), url.clone());
+    }
+
+    // Resolve conflicts interactively
+    let mut overwritten: usize = 0;
+    let mut skipped: usize = 0;
+    let mut bulk_action: Option<bool> = None; // Some(true) = use all imported, Some(false) = keep all existing
+
+    for (alias, existing_url, imported_url) in &conflicts {
+        if let Some(use_imported) = bulk_action {
+            if use_imported {
+                config.aliases.insert(alias.clone(), imported_url.clone());
+                overwritten += 1;
+            } else {
+                skipped += 1;
+            }
+            continue;
+        }
+
+        let prompt = format!(
+            "Conflict for '{}':\n  current:  {}\n  imported: {}",
+            alias, existing_url, imported_url
+        );
+        let remaining = conflicts.len() - overwritten - skipped;
+        let items = if remaining > 1 {
+            vec![
+                format!("Keep existing ({})", existing_url),
+                format!("Use imported ({})", imported_url),
+                "Keep all existing".to_string(),
+                "Use all imported".to_string(),
+            ]
+        } else {
+            vec![
+                format!("Keep existing ({})", existing_url),
+                format!("Use imported ({})", imported_url),
+            ]
+        };
+
+        let selection = Select::new()
+            .with_prompt(&prompt)
+            .items(&items)
+            .default(0)
+            .interact()?;
+
+        match selection {
+            0 => {
+                skipped += 1;
+            }
+            1 => {
+                config.aliases.insert(alias.clone(), imported_url.clone());
+                overwritten += 1;
+            }
+            2 => {
+                // Keep all existing
+                skipped += 1;
+                bulk_action = Some(false);
+            }
+            3 => {
+                // Use all imported
+                config.aliases.insert(alias.clone(), imported_url.clone());
+                overwritten += 1;
+                bulk_action = Some(true);
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    save(&config)?;
+
+    // Print summary
+    let added = new_aliases.len();
+    let mut parts: Vec<String> = Vec::new();
+    if added > 0 {
+        parts.push(format!("{} added", added));
+    }
+    if overwritten > 0 {
+        parts.push(format!("{} overwritten", overwritten));
+    }
+    if skipped > 0 {
+        parts.push(format!("{} skipped", skipped));
+    }
+    if unchanged > 0 {
+        parts.push(format!("{} unchanged", unchanged));
+    }
+    if parts.is_empty() {
+        println!("Nothing to import.");
+    } else {
+        println!("Import complete: {}.", parts.join(", "));
+    }
+
+    Ok(())
 }
 
 pub fn complete_alias(current: &std::ffi::OsStr) -> Vec<clap_complete::engine::CompletionCandidate> {
