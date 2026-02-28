@@ -37,31 +37,15 @@ fn build_command(url: &str, browser: BrowserChoice) -> Result<Command> {
 
 #[cfg(target_os = "linux")]
 fn build_command(url: &str, browser: BrowserChoice) -> Result<Command> {
-    let cmd = match browser {
-        BrowserChoice::Default => {
-            let mut c = Command::new("xdg-open");
-            c.arg(url);
-            c
-        }
-        BrowserChoice::Safari => {
-            anyhow::bail!("Safari is not available on Linux");
-        }
-        BrowserChoice::Chrome => {
-            let mut c = Command::new("google-chrome");
-            c.arg(url);
-            c
-        }
-        BrowserChoice::Firefox => {
-            let mut c = Command::new("firefox");
-            c.arg(url);
-            c
-        }
-        BrowserChoice::Brave => {
-            let mut c = Command::new("brave-browser");
-            c.arg(url);
-            c
-        }
+    let program = match browser {
+        BrowserChoice::Default => "xdg-open",
+        BrowserChoice::Safari => anyhow::bail!("Safari is not available on Linux"),
+        BrowserChoice::Chrome => "google-chrome",
+        BrowserChoice::Firefox => "firefox",
+        BrowserChoice::Brave => "brave-browser",
     };
+    let mut cmd = Command::new(program);
+    cmd.arg(url);
     Ok(cmd)
 }
 
