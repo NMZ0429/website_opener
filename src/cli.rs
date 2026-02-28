@@ -62,9 +62,9 @@ pub enum Commands {
     },
     /// Export current alias settings to stdout (TOML format)
     Export,
-    /// Import aliases from a TOML file (use `-` for stdin)
+    /// Import aliases from a TOML file, URL, or stdin (use `-` for stdin)
     Import {
-        /// Path to the TOML file to import
+        /// Path to a local TOML file, remote URL (https://…), or `-` for stdin
         #[arg(value_hint = ValueHint::FilePath)]
         path: String,
     },
