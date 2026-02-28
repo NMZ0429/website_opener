@@ -76,6 +76,83 @@ pub fn list_aliases() -> Result<Vec<(String, String)>> {
         .collect())
 }
 
+/// Maximum size of a remote configuration file (1 MB).
+const MAX_REMOTE_SIZE: u64 = 1_048_576;
+
+/// Returns `true` if `path` looks like a remote URL (http:// or https://).
+fn is_remote_url(path: &str) -> bool {
+    path.starts_with("http://") || path.starts_with("https://")
+}
+
+/// Fetch content from a remote URL with safety limits.
+fn fetch_remote(url: &str) -> Result<String> {
+    use std::io::Read;
+
+    let response = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .get(url)
+        .call()
+        .with_context(|| format!("Failed to fetch URL '{}'", url))?;
+
+    let content_len = response
+        .header("Content-Length")
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(0);
+    if content_len > MAX_REMOTE_SIZE {
+        anyhow::bail!(
+            "Remote file is too large ({} bytes, limit is {} bytes)",
+            content_len,
+            MAX_REMOTE_SIZE
+        );
+    }
+
+    let mut buf = String::new();
+    response
+        .into_reader()
+        .take(MAX_REMOTE_SIZE + 1)
+        .read_to_string(&mut buf)
+        .with_context(|| "Failed to read response body")?;
+    if buf.len() as u64 > MAX_REMOTE_SIZE {
+        anyhow::bail!(
+            "Remote file is too large (limit is {} bytes)",
+            MAX_REMOTE_SIZE
+        );
+    }
+    Ok(buf)
+}
+
+/// Validate that imported alias names and URLs are safe.
+fn sanitize_config(config: &Config) -> Result<()> {
+    for (alias, url) in &config.aliases {
+        // Alias: must be non-empty, contain no control characters, no whitespace
+        if alias.is_empty() {
+            anyhow::bail!("Imported config contains an empty alias name");
+        }
+        if alias.chars().any(|c| c.is_control() || c.is_whitespace()) {
+            anyhow::bail!(
+                "Alias '{}' contains invalid characters (control or whitespace)",
+                alias
+            );
+        }
+        // URL: must be non-empty, must start with a known scheme, no control characters
+        if url.is_empty() {
+            anyhow::bail!("Alias '{}' has an empty URL", alias);
+        }
+        if url.chars().any(|c| c.is_control()) {
+            anyhow::bail!("URL for alias '{}' contains control characters", alias);
+        }
+        if !(url.starts_with("http://") || url.starts_with("https://")) {
+            anyhow::bail!(
+                "URL for alias '{}' has an unsupported scheme: {}",
+                alias,
+                url
+            );
+        }
+    }
+    Ok(())
+}
+
 pub fn import_aliases(path: &str) -> Result<()> {
     let content = if path == "-" {
         use std::io::Read;
@@ -84,6 +161,8 @@ pub fn import_aliases(path: &str) -> Result<()> {
             .read_to_string(&mut buf)
             .with_context(|| "Failed to read from stdin")?;
         buf
+    } else if is_remote_url(path) {
+        fetch_remote(path)?
     } else {
         std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read file '{}'", path))?
@@ -91,6 +170,8 @@ pub fn import_aliases(path: &str) -> Result<()> {
 
     let imported: Config =
         toml::from_str(&content).with_context(|| "Failed to parse TOML input")?;
+
+    sanitize_config(&imported)?;
 
     if imported.aliases.is_empty() {
         println!("No aliases found in input.");
@@ -225,4 +306,93 @@ pub fn complete_alias(current: &std::ffi::OsStr) -> Vec<clap_complete::engine::C
         .filter(|alias| alias.starts_with(current))
         .map(clap_complete::engine::CompletionCandidate::new)
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_remote_url_https() {
+        assert!(is_remote_url("https://gist.githubusercontent.com/user/abc/raw/config.toml"));
+    }
+
+    #[test]
+    fn test_is_remote_url_http() {
+        assert!(is_remote_url("http://example.com/config.toml"));
+    }
+
+    #[test]
+    fn test_is_remote_url_local_path() {
+        assert!(!is_remote_url("/home/user/config.toml"));
+        assert!(!is_remote_url("config.toml"));
+        assert!(!is_remote_url("-"));
+    }
+
+    #[test]
+    fn test_is_remote_url_ftp_not_supported() {
+        assert!(!is_remote_url("ftp://example.com/config.toml"));
+    }
+
+    #[test]
+    fn test_sanitize_valid_config() {
+        let mut config = Config::default();
+        config.aliases.insert("gh".to_string(), "https://github.com".to_string());
+        config.aliases.insert("docs".to_string(), "https://docs.rs".to_string());
+        assert!(sanitize_config(&config).is_ok());
+    }
+
+    #[test]
+    fn test_sanitize_rejects_empty_url() {
+        let mut config = Config::default();
+        config.aliases.insert("bad".to_string(), "".to_string());
+        let err = sanitize_config(&config).unwrap_err();
+        assert!(err.to_string().contains("empty URL"));
+    }
+
+    #[test]
+    fn test_sanitize_rejects_control_chars_in_alias() {
+        let mut config = Config::default();
+        config.aliases.insert("bad\x00name".to_string(), "https://example.com".to_string());
+        let err = sanitize_config(&config).unwrap_err();
+        assert!(err.to_string().contains("invalid characters"));
+    }
+
+    #[test]
+    fn test_sanitize_rejects_whitespace_in_alias() {
+        let mut config = Config::default();
+        config.aliases.insert("bad name".to_string(), "https://example.com".to_string());
+        let err = sanitize_config(&config).unwrap_err();
+        assert!(err.to_string().contains("invalid characters"));
+    }
+
+    #[test]
+    fn test_sanitize_rejects_control_chars_in_url() {
+        let mut config = Config::default();
+        config.aliases.insert("bad".to_string(), "https://example.com/\x07path".to_string());
+        let err = sanitize_config(&config).unwrap_err();
+        assert!(err.to_string().contains("control characters"));
+    }
+
+    #[test]
+    fn test_sanitize_rejects_unsupported_scheme() {
+        let mut config = Config::default();
+        config.aliases.insert("bad".to_string(), "ftp://example.com".to_string());
+        let err = sanitize_config(&config).unwrap_err();
+        assert!(err.to_string().contains("unsupported scheme"));
+    }
+
+    #[test]
+    fn test_sanitize_rejects_file_scheme() {
+        let mut config = Config::default();
+        config.aliases.insert("local".to_string(), "file:///home/user/page.html".to_string());
+        let err = sanitize_config(&config).unwrap_err();
+        assert!(err.to_string().contains("unsupported scheme"));
+    }
+
+    #[test]
+    fn test_sanitize_empty_config_is_ok() {
+        let config = Config::default();
+        assert!(sanitize_config(&config).is_ok());
+    }
 }
