@@ -86,7 +86,12 @@ fn is_remote_url(path: &str) -> bool {
 
 /// Fetch content from a remote URL with safety limits.
 fn fetch_remote(url: &str) -> Result<String> {
-    let response = ureq::get(url)
+    use std::io::Read;
+
+    let response = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .get(url)
         .call()
         .with_context(|| format!("Failed to fetch URL '{}'", url))?;
 
@@ -102,17 +107,19 @@ fn fetch_remote(url: &str) -> Result<String> {
         );
     }
 
-    let body = response
-        .into_string()
+    let mut buf = String::new();
+    response
+        .into_reader()
+        .take(MAX_REMOTE_SIZE + 1)
+        .read_to_string(&mut buf)
         .with_context(|| "Failed to read response body")?;
-    if body.len() as u64 > MAX_REMOTE_SIZE {
+    if buf.len() as u64 > MAX_REMOTE_SIZE {
         anyhow::bail!(
-            "Remote file is too large ({} bytes, limit is {} bytes)",
-            body.len(),
+            "Remote file is too large (limit is {} bytes)",
             MAX_REMOTE_SIZE
         );
     }
-    Ok(body)
+    Ok(buf)
 }
 
 /// Validate that imported alias names and URLs are safe.
@@ -135,10 +142,7 @@ fn sanitize_config(config: &Config) -> Result<()> {
         if url.chars().any(|c| c.is_control()) {
             anyhow::bail!("URL for alias '{}' contains control characters", alias);
         }
-        if !(url.starts_with("http://")
-            || url.starts_with("https://")
-            || url.starts_with("file://"))
-        {
+        if !(url.starts_with("http://") || url.starts_with("https://")) {
             anyhow::bail!(
                 "URL for alias '{}' has an unsupported scheme: {}",
                 alias,
@@ -379,10 +383,11 @@ mod tests {
     }
 
     #[test]
-    fn test_sanitize_allows_file_scheme() {
+    fn test_sanitize_rejects_file_scheme() {
         let mut config = Config::default();
         config.aliases.insert("local".to_string(), "file:///home/user/page.html".to_string());
-        assert!(sanitize_config(&config).is_ok());
+        let err = sanitize_config(&config).unwrap_err();
+        assert!(err.to_string().contains("unsupported scheme"));
     }
 
     #[test]
