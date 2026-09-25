@@ -1,6 +1,6 @@
 [package]
 name = "website_opener"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 license = "BSD-3-Clause"
 repository = "https://github.com/NMZ0429/website_opener"
@@ -14,10 +14,10 @@ path = "src/main.rs"
 clap          = { version = "4", features = ["derive"] }
 clap_complete = { version = "4", features = ["unstable-dynamic"] }
 serde         = { version = "1", features = ["derive"] }
-toml          = "0.8"
-dirs          = "5"
+toml          = "1"
+dirs          = "7"
 anyhow        = "1"
-dialoguer     = "0.11"
+dialoguer     = "0.12"
 
 [profile.dist]
 inherits = "release"
