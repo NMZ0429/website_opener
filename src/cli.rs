@@ -70,7 +70,11 @@ pub enum Commands {
     },
     /// Output aliases for shell completion (internal use)
     #[command(name = "_complete-aliases", hide = true)]
-    CompleteAliases,
+    CompleteAliases {
+        /// Terminal width; URLs are shortened to fit the zsh menu
+        #[arg(long)]
+        width: Option<usize>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

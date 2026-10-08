@@ -47,6 +47,8 @@ web export
 web export > my-aliases.toml
 ```
 
+In a terminal, `web list` prints a header and a summary line, colors aliases and hosts, and shortens long URLs to fit the window. Piped or redirected output (`web list | grep gh`) stays plain, with full URLs. Set `NO_COLOR=1` to turn colors off.
+
 ## Shell Completion
 
 Add to your `~/.zshrc` (or equivalent):
@@ -73,6 +75,10 @@ web completions fish > ~/.config/fish/completions/web.fish
 ```
 
 Completions stay in sync with your config automatically — alias names are completed as you type.
+
+In zsh, the menu shows each alias with its URL, colored like `web list`. To use your own colors, set `zstyle ':completion:*:*:web:*:aliases' list-colors ...` in `~/.zshrc`. fish and PowerShell show the URLs too.
+
+After upgrading `web`, regenerate any completion script you wrote to a file (e.g. `web completions zsh > ~/.zfunc/_web`) to pick up completion changes.
 
 ## Config
 

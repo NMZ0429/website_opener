@@ -1,6 +1,7 @@
 mod browser;
 mod cli;
 mod config;
+mod display;
 
 use anyhow::Result;
 use clap::{CommandFactory, Parser};
@@ -53,35 +54,23 @@ fn run() -> Result<()> {
         Some(Commands::Import { path }) => {
             config::import_aliases(&path)?;
         }
-        Some(Commands::CompleteAliases) => {
+        Some(Commands::CompleteAliases { width }) => {
             let aliases = config::list_aliases()?;
-            for (alias, url) in aliases {
-                // Escape colons and backslashes for zsh _describe format
-                let alias = alias.replace('\\', "\\\\").replace(':', "\\:");
-                let url = url.replace('\\', "\\\\");
-                println!("{alias}:{url}");
-            }
+            print!("{}", display::render_completions(&aliases, width));
         }
         Some(Commands::List) => {
             let aliases = config::list_aliases()?;
-            if aliases.is_empty() {
-                println!("No aliases registered.");
+            let term = console::Term::stdout();
+            let opts = if term.is_term() {
+                display::ListOptions {
+                    color: console::colors_enabled(),
+                    decorate: true,
+                    width: term.size_checked().map(|(_, cols)| cols as usize),
+                }
             } else {
-                // Group aliases by URL
-                let mut by_url: std::collections::BTreeMap<String, Vec<String>> =
-                    std::collections::BTreeMap::new();
-                for (alias, url) in aliases {
-                    by_url.entry(url).or_default().push(alias);
-                }
-                let rows: Vec<(String, String)> = by_url
-                    .into_iter()
-                    .map(|(url, names)| (names.join(", "), url))
-                    .collect();
-                let max_len = rows.iter().map(|(k, _)| k.len()).max().unwrap_or(0);
-                for (names, url) in rows {
-                    println!("{:<width$}  {}", names, url, width = max_len);
-                }
-            }
+                display::ListOptions::plain()
+            };
+            print!("{}", display::render_list(&aliases, &opts));
         }
         None => {
             let alias = cli
@@ -143,7 +132,7 @@ _web() {
                         'list:List all aliases'
                         'remove:Remove alias(es)'
                     )
-                    _describe 'subcommand' subcmds
+                    _describe -t subcommands 'subcommand' subcmds
                     ;;
             esac
             ;;
@@ -151,6 +140,7 @@ _web() {
 }
 
 _web_first_arg() {
+    _web_aliases
     local -a subcommands=(
         'add:Register new alias(es) — comma-separated for multiple (e.g. claude,c)'
         'completions:Generate shell completions'
@@ -160,15 +150,22 @@ _web_first_arg() {
         'list:List all aliases'
         'remove:Remove alias(es) — comma-separated for multiple (e.g. claude,c)'
     )
-    _describe 'subcommand' subcommands
-    _web_aliases
+    _describe -t subcommands 'subcommand' subcommands
 }
 
 _web_aliases() {
     local -a aliases
-    aliases=("${(@f)$(web _complete-aliases 2>/dev/null)}")
-    [[ -n $aliases ]] && _describe 'alias' aliases
+    aliases=("${(@f)$(web _complete-aliases --width $COLUMNS 2>/dev/null)}")
+    [[ -n $aliases ]] && _describe -t aliases 'alias' aliases
 }
+
+# Color aliases like `web list`, unless a style is already set for them.
+# Patterns are matched against each alias and, separately, its "-- url" description.
+zstyle -g _web_colors ':completion:*:*:web:*:aliases' list-colors ||
+    zstyle ':completion:*:*:web:*:aliases' list-colors \
+        '=(#b)(-- )([^/?#]#)(*)=2=2=0=2' \
+        '=(#b)(*)=0=1;36'
+unset _web_colors
 
 _web "$@"
 "#
