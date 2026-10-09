@@ -54,9 +54,14 @@ fn run() -> Result<()> {
         Some(Commands::Import { path }) => {
             config::import_aliases(&path)?;
         }
-        Some(Commands::CompleteAliases { width }) => {
+        Some(Commands::CompleteAliases) => {
             let aliases = config::list_aliases()?;
-            print!("{}", display::render_completions(&aliases, width));
+            for (alias, url) in aliases {
+                // Escape colons and backslashes for zsh _describe format
+                let alias = alias.replace('\\', "\\\\").replace(':', "\\:");
+                let url = url.replace('\\', "\\\\");
+                println!("{alias}:{url}");
+            }
         }
         Some(Commands::List) => {
             let aliases = config::list_aliases()?;
@@ -154,16 +159,45 @@ _web_first_arg() {
 }
 
 _web_aliases() {
-    local -a aliases
-    aliases=("${(@f)$(web _complete-aliases --width $COLUMNS 2>/dev/null)}")
-    [[ -n $aliases ]] && _describe -t aliases 'alias' aliases
+    local -a aliases urls
+    aliases=("${(@f)$(web _complete-aliases 2>/dev/null)}")
+    [[ -n $aliases ]] || return 1
+    # Most URLs share the https:// scheme; drop it to leave the menu more room
+    aliases=("${(@)aliases/:https:\/\//:}")
+    urls=("${(@)${(@)aliases#([^:\\]|\\?)##:}//\\(#b)(?)/$match[1]}")
+
+    # zsh clips URLs that don't fit the menu; end those with "…" instead. Call
+    # through to any compadd wrapper already in place (zsh-autocomplete has one).
+    local saved=$functions[compadd]
+    functions[_web_compadd]=${saved:-'builtin compadd "$@"'}
+    {
+        compadd() {
+            local i=${@[(I)-d]}
+            if (( i )); then
+                local name=${@[i+1]} j url
+                local -a disp=("${(@P)name}")
+                for j in {1..$#disp}; do
+                    [[ $disp[j] == *'-- '* ]] || continue
+                    url=${${disp[j]#*-- }%%[[:space:]]##}
+                    (( $urls[(Ie)$url] )) || disp[j]="${disp[j][1,-2]}…"
+                done
+                set -A $name "$disp[@]"
+            fi
+            _web_compadd "$@"
+        }
+        _describe -t aliases 'alias' aliases
+    } always {
+        unfunction compadd _web_compadd
+        [[ -n $saved ]] && functions[compadd]=$saved
+    }
 }
 
-# Color aliases like `web list`, unless a style is already set for them.
-# Patterns are matched against each alias and, separately, its "-- url" description.
+# Color aliases like `web list`, unless a style is already set for them. zsh
+# matches these against each alias, each "-- url" cell and each "alias  -- url" row.
 zstyle -g _web_colors ':completion:*:*:web:*:aliases' list-colors ||
     zstyle ':completion:*:*:web:*:aliases' list-colors \
-        '=(#b)(-- )([^/?#]#)(*)=2=2=0=2' \
+        '=(#b)(-- )([a-z]##://|)([^/?#]#)(*)=2=2=2=0=2' \
+        '=(#b)(*)( -- )([a-z]##://|)([^/?#]#)(*)=2=1;36=2=2=0=2' \
         '=(#b)(*)=0=1;36'
 unset _web_colors
 
