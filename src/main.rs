@@ -1,6 +1,7 @@
 mod browser;
 mod cli;
 mod config;
+mod display;
 
 use anyhow::Result;
 use clap::{CommandFactory, Parser};
@@ -64,24 +65,17 @@ fn run() -> Result<()> {
         }
         Some(Commands::List) => {
             let aliases = config::list_aliases()?;
-            if aliases.is_empty() {
-                println!("No aliases registered.");
+            let term = console::Term::stdout();
+            let opts = if term.is_term() {
+                display::ListOptions {
+                    color: console::colors_enabled(),
+                    decorate: true,
+                    width: term.size_checked().map(|(_, cols)| cols as usize),
+                }
             } else {
-                // Group aliases by URL
-                let mut by_url: std::collections::BTreeMap<String, Vec<String>> =
-                    std::collections::BTreeMap::new();
-                for (alias, url) in aliases {
-                    by_url.entry(url).or_default().push(alias);
-                }
-                let rows: Vec<(String, String)> = by_url
-                    .into_iter()
-                    .map(|(url, names)| (names.join(", "), url))
-                    .collect();
-                let max_len = rows.iter().map(|(k, _)| k.len()).max().unwrap_or(0);
-                for (names, url) in rows {
-                    println!("{:<width$}  {}", names, url, width = max_len);
-                }
-            }
+                display::ListOptions::plain()
+            };
+            print!("{}", display::render_list(&aliases, &opts));
         }
         None => {
             let alias = cli
@@ -143,7 +137,7 @@ _web() {
                         'list:List all aliases'
                         'remove:Remove alias(es)'
                     )
-                    _describe 'subcommand' subcmds
+                    _describe -t subcommands 'subcommand' subcmds
                     ;;
             esac
             ;;
@@ -151,6 +145,7 @@ _web() {
 }
 
 _web_first_arg() {
+    _web_aliases
     local -a subcommands=(
         'add:Register new alias(es) — comma-separated for multiple (e.g. claude,c)'
         'completions:Generate shell completions'
@@ -160,15 +155,51 @@ _web_first_arg() {
         'list:List all aliases'
         'remove:Remove alias(es) — comma-separated for multiple (e.g. claude,c)'
     )
-    _describe 'subcommand' subcommands
-    _web_aliases
+    _describe -t subcommands 'subcommand' subcommands
 }
 
 _web_aliases() {
-    local -a aliases
+    local -a aliases urls
     aliases=("${(@f)$(web _complete-aliases 2>/dev/null)}")
-    [[ -n $aliases ]] && _describe 'alias' aliases
+    [[ -n $aliases ]] || return 1
+    # Most URLs share the https:// scheme; drop it to leave the menu more room
+    aliases=("${(@)aliases/:https:\/\//:}")
+    urls=("${(@)${(@)aliases#([^:\\]|\\?)##:}//\\(#b)(?)/$match[1]}")
+
+    # zsh clips URLs that don't fit the menu; end those with "…" instead. Call
+    # through to any compadd wrapper already in place (zsh-autocomplete has one).
+    local saved=$functions[compadd]
+    functions[_web_compadd]=${saved:-'builtin compadd "$@"'}
+    {
+        compadd() {
+            local i=${@[(I)-d]}
+            if (( i )); then
+                local name=${@[i+1]} j url
+                local -a disp=("${(@P)name}")
+                for j in {1..$#disp}; do
+                    [[ $disp[j] == *'-- '* ]] || continue
+                    url=${${disp[j]#*-- }%%[[:space:]]##}
+                    (( $urls[(Ie)$url] )) || disp[j]="${disp[j][1,-2]}…"
+                done
+                set -A $name "$disp[@]"
+            fi
+            _web_compadd "$@"
+        }
+        _describe -t aliases 'alias' aliases
+    } always {
+        unfunction compadd _web_compadd
+        [[ -n $saved ]] && functions[compadd]=$saved
+    }
 }
+
+# Color aliases like `web list`, unless a style is already set for them. zsh
+# matches these against each alias, each "-- url" cell and each "alias  -- url" row.
+zstyle -g _web_colors ':completion:*:*:web:*:aliases' list-colors ||
+    zstyle ':completion:*:*:web:*:aliases' list-colors \
+        '=(#b)(-- )([a-z]##://|)([^/?#]#)(*)=2=2=2=0=2' \
+        '=(#b)(*)( -- )([a-z]##://|)([^/?#]#)(*)=2=1;36=2=2=0=2' \
+        '=(#b)(*)=0=1;36'
+unset _web_colors
 
 _web "$@"
 "#

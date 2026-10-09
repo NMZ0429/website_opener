@@ -221,8 +221,10 @@ pub fn complete_alias(current: &std::ffi::OsStr) -> Vec<clap_complete::engine::C
     };
     config
         .aliases
-        .into_keys()
-        .filter(|alias| alias.starts_with(current))
-        .map(clap_complete::engine::CompletionCandidate::new)
+        .into_iter()
+        .filter(|(alias, _)| alias.starts_with(current))
+        .map(|(alias, url)| {
+            clap_complete::engine::CompletionCandidate::new(alias).help(Some(url.into()))
+        })
         .collect()
 }
